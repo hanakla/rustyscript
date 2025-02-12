@@ -2,6 +2,8 @@ use crate::Error;
 use deno_core::v8::{self, HandleScope};
 use deno_core::ModuleSpecifier;
 use std::path::Path;
+use deno_core::error::ModuleLoaderError;
+use deno_error::JsErrorBox;
 
 /// Converts a string representing a relative or absolute path into a
 /// `ModuleSpecifier`. A relative path is considered relative to the passed
@@ -11,19 +13,19 @@ use std::path::Path;
 fn resolve_path(
     path_str: impl AsRef<Path>,
     current_dir: &Path,
-) -> Result<ModuleSpecifier, deno_core::ModuleResolutionError> {
+) -> Result<ModuleSpecifier, ModuleLoaderError> {
     let path = current_dir.join(path_str);
     let path = deno_core::normalize_path(path);
-    deno_core::url::Url::from_file_path(&path)
-        .map_err(|()| deno_core::ModuleResolutionError::InvalidPath(path))
+  deno_core::url::Url::from_file_path(&path)
+    .map_err(|_| ModuleLoaderError::NotFound)
 }
 
 pub trait ToModuleSpecifier {
-    fn to_module_specifier(&self, base: &Path) -> Result<ModuleSpecifier, Error>;
+    fn to_module_specifier(&self, base: &Path) -> Result<ModuleSpecifier, ModuleLoaderError>;
 }
 
 impl<T: AsRef<Path>> ToModuleSpecifier for T {
-    fn to_module_specifier(&self, base: &Path) -> Result<ModuleSpecifier, Error> {
+    fn to_module_specifier(&self, base: &Path) -> Result<ModuleSpecifier, ModuleLoaderError> {
         Ok(resolve_path(self, base)?)
     }
 }

@@ -7,10 +7,13 @@ use deno_core::v8::{BackingStore, SharedRef};
 use deno_core::{extension, CrossIsolateStore, Extension, FeatureChecker};
 use deno_fs::RealFs;
 use deno_runtime::permissions::RuntimePermissionDescriptorParser;
+use deno_runtime::web_worker::{WebWorker, WebWorkerOptions, WebWorkerServiceOptions};
+use deno_runtime::fmt_errors::format_js_error;
+use deno_runtime::ops::permissions::deno_permissions;
+use deno_runtime::{colors, deno_process, BootstrapOptions, WorkerExecutionMode, WorkerLogLevel};
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
-
 fn build_permissions(
     permissions_container: &PermissionsContainer,
 ) -> ::deno_permissions::PermissionsContainer {
@@ -57,8 +60,7 @@ impl ExtensionTrait<()> for deno_runtime::runtime {
     }
 }
 
-use deno_runtime::fmt_errors::format_js_error;
-use deno_runtime::ops::permissions::deno_permissions;
+
 impl ExtensionTrait<()> for deno_permissions {
     fn init((): ()) -> Extension {
         deno_permissions::init_ops_and_esm()
@@ -91,24 +93,19 @@ impl ExtensionTrait<()> for deno_web_worker {
     }
 }
 
-use deno_runtime::ops::process::deno_process;
-impl ExtensionTrait<Arc<RustyResolver>> for deno_process {
+
+impl ExtensionTrait<Arc<RustyResolver>> for deno_process::deno_process {
     fn init(resolver: Arc<RustyResolver>) -> Extension {
-        deno_process::init_ops_and_esm(Some(resolver))
+        deno_process::deno_process::init_ops_and_esm(Some(resolver))
     }
 }
 
-use deno_runtime::ops::signal::deno_signal;
-impl ExtensionTrait<()> for deno_signal {
-    fn init((): ()) -> Extension {
-        deno_signal::init_ops_and_esm()
-    }
-}
 
-use deno_runtime::ops::os::deno_os;
-impl ExtensionTrait<()> for deno_os {
+use deno_runtime::deno_os;
+use deno_runtime::{deno_os::{ExitCode}};
+impl ExtensionTrait<()> for deno_os::deno_os {
     fn init((): ()) -> Extension {
-        deno_os::init_ops_and_esm(ExitCode::default())
+        deno_os::deno_os::init_ops_and_esm(ExitCode::default())
     }
 }
 
@@ -134,21 +131,18 @@ pub fn extensions(
     vec![
         deno_fs_events::build((), is_snapshot),
         deno_bootstrap::build((), is_snapshot),
-        deno_os::build((), is_snapshot),
-        deno_signal::build((), is_snapshot),
+        deno_os::deno_os::build((), is_snapshot),
+        // deno_signal::build((), is_snapshot),
         deno_process::build(options.node_resolver.clone(), is_snapshot),
         deno_web_worker::build((), is_snapshot),
         deno_worker_host::build((options, shared_array_buffer_store), is_snapshot),
         deno_permissions::build((), is_snapshot),
         //
         deno_runtime::runtime::build((), is_snapshot),
-        init_runtime::build((), is_snapshot),
+        // init_runtime::build((), is_snapshot),
     ]
 }
 
-use deno_runtime::web_worker::{WebWorker, WebWorkerOptions, WebWorkerServiceOptions};
-use deno_runtime::worker::ExitCode;
-use deno_runtime::{colors, BootstrapOptions, WorkerExecutionMode, WorkerLogLevel};
 #[derive(Clone)]
 pub struct WebWorkerCallbackOptions {
     shared_array_buffer_store: Option<CrossIsolateStore<SharedRef<BackingStore>>>,
@@ -250,7 +244,7 @@ fn create_web_worker_callback(options: WebWorkerCallbackOptions) -> Arc<CreateWe
             create_web_worker_cb,
             format_js_error_fn: Some(Arc::new(format_js_error)),
             worker_type: args.worker_type,
-            get_error_class_fn: Some(&get_error_class_name),
+            // get_error_class_fn: Some(&get_error_class_name),
             stdio: options.stdio.clone(),
             cache_storage_dir: None,
             strace_ops: None,

@@ -2,6 +2,7 @@ use super::ExtensionTrait;
 use crate::{error::Error, RsAsyncFunction, RsFunction};
 use deno_core::{anyhow::anyhow, extension, op2, serde_json, v8, Extension, OpState};
 use std::collections::HashMap;
+use deno_error::JsErrorBox;
 
 type FnCache = HashMap<String, Box<dyn RsFunction>>;
 type AsyncFnCache = HashMap<String, Box<dyn RsAsyncFunction>>;
@@ -54,8 +55,8 @@ fn call_registered_function_async(
 }
 
 #[op2(fast)]
-fn op_panic2(#[string] msg: &str) -> Result<(), deno_core::anyhow::Error> {
-    Err(anyhow!(msg.to_string()))
+fn op_panic2(#[string] msg: &str) -> Result<(), JsErrorBox> {
+    Err(JsErrorBox::generic(msg.to_string()))
 }
 
 extension!(

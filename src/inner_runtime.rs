@@ -5,10 +5,7 @@ use crate::{
     transpiler::transpile,
     utilities, Error, ExtensionOptions, Module, ModuleHandle,
 };
-use deno_core::{
-    futures::FutureExt, serde_json, serde_v8::from_v8, v8, FeatureChecker, JsRuntime,
-    JsRuntimeForSnapshot, PollEventLoopOptions,
-};
+use deno_core::{futures::FutureExt, serde_json, serde_v8::from_v8, v8, FastStaticString, FastString, FeatureChecker, JsRuntime, JsRuntimeForSnapshot, PollEventLoopOptions};
 use serde::de::DeserializeOwned;
 use std::{
     collections::{HashMap, HashSet},
@@ -18,6 +15,11 @@ use std::{
     task::Poll,
     time::Duration,
 };
+use std::borrow::Cow;
+use deno_error::JsErrorClass;
+#[cfg(feature = "web")]
+use deno_telemetry::OtelRuntimeConfig;
+
 use tokio_util::sync::CancellationToken;
 
 /// Wrapper trait to make the `InnerRuntime` generic over the runtime types
@@ -32,8 +34,10 @@ impl RuntimeTrait for JsRuntime {
     where
         Self: Sized,
     {
-        let rt = Self::try_new(options)?;
-        Ok(rt)
+      match Self::try_new(options) {
+        Ok(rt) => Ok(rt),
+        Err(e) => Err(Error::Runtime(e.to_string()))
+      }
     }
     fn rt_mut(&mut self) -> &mut JsRuntime {
         self
@@ -44,8 +48,10 @@ impl RuntimeTrait for JsRuntimeForSnapshot {
     where
         Self: Sized,
     {
-        let rt = Self::try_new(options)?;
-        Ok(rt)
+        match Self::try_new(options) {
+            Ok(rt) => Ok(rt),
+            Err(e) => Err(Error::Runtime(e.to_string()))
+        }
     }
     fn rt_mut(&mut self) -> &mut JsRuntime {
         self
@@ -215,7 +221,10 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
         #[cfg(feature = "web")]
         {
             let otel_conf = options.extension_options.web.telemetry_config.clone();
-            deno_telemetry::init(otel_conf)?;
+            deno_telemetry::init(OtelRuntimeConfig {
+              runtime_name: Cow::Borrowed("rustyscript"),
+              runtime_version: Cow::Borrowed("0.0.0"),
+            }, &otel_conf)?;
         }
 
         // If a snapshot is provided, do not reload ESM for extensions
@@ -476,9 +485,14 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
         module_context: &ModuleHandle,
         name: &str,
     ) -> Result<v8::Global<v8::Value>, Error> {
-        let module_namespace = self
+        let module_namespace = if let Ok(namespace) = self
             .deno_runtime()
-            .get_module_namespace(module_context.id())?;
+            .get_module_namespace(module_context.id()) {
+            namespace
+        } else {
+            return Err(Error::Runtime(module_context.id().to_string()))
+        };
+
         let mut scope = self.deno_runtime().handle_scope();
         let module_namespace = module_namespace.open(&mut scope);
         assert!(module_namespace.is_module_namespace_object());
@@ -568,10 +582,11 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
     ) -> Result<v8::Global<v8::Value>, Error> {
         // Namespace, if provided
         let module_namespace = if let Some(module_context) = module_context {
-            Some(
-                self.deno_runtime()
-                    .get_module_namespace(module_context.id())?,
-            )
+            if let Ok(ns) = self.deno_runtime().get_module_namespace(module_context.id()) {
+                Some(ns)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -579,7 +594,6 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
         let mut scope = self.deno_runtime().handle_scope();
         let mut scope = v8::TryCatch::new(&mut scope);
 
-        // Get the namespace
         // Module-level if supplied, none otherwise
         let namespace: v8::Local<v8::Value> = if let Some(namespace) = module_namespace {
             v8::Local::<v8::Object>::new(&mut scope, namespace).into()
@@ -740,23 +754,23 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
 
             // Now CJS translation, for node
             #[cfg(feature = "node_experimental")]
-            let code = self
+            let code = FastString::from(
+                self
                 .module_loader
                 .translate_cjs(&module_specifier, &code)
-                .await?;
-
-            let fast_code = deno_core::FastString::from(code.clone());
+                .await?
+            );
 
             let s_modid = self
                 .deno_runtime()
-                .load_side_es_module_from_code(&module_specifier, fast_code)
+                .load_side_es_module_from_code(&module_specifier, FastString::from(code.to_string()))
                 .await?;
 
             // Update source map cache
             self.module_loader.insert_source_map(
                 module_specifier.as_str(),
-                code,
-                sourcemap.map(|s| s.to_vec()),
+                FastString::from(code),
+                sourcemap.map(|s| Cow::Owned(s.to_vec())),
             );
 
             let mod_load = self.deno_runtime().mod_evaluate(s_modid);
@@ -768,7 +782,10 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
         // Load main module
         if let Some(module) = main_module {
             let module_specifier = module.filename().to_module_specifier(&self.cwd)?;
-            let (code, sourcemap) = transpile(&module_specifier, module.contents())?;
+            let (code, sourcemap) = match transpile(&module_specifier, module.contents()) {
+                Ok(result) => result,
+                Err(e) => return Err(Error::Runtime(e.get_message().to_string())),
+            };
 
             // Now CJS translation, for node
             #[cfg(feature = "node_experimental")]
@@ -777,18 +794,16 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
                 .translate_cjs(&module_specifier, &code)
                 .await?;
 
-            let fast_code = deno_core::FastString::from(code.clone());
-
             let module_id = self
                 .deno_runtime()
-                .load_main_es_module_from_code(&module_specifier, fast_code)
+                .load_main_es_module_from_code(&module_specifier, FastString::from(code.to_string()))
                 .await?;
 
             // Update source map cache
             self.module_loader.insert_source_map(
                 module_specifier.as_str(),
-                code,
-                sourcemap.map(|s| s.to_vec()),
+                FastString::from(code.to_string()),
+                sourcemap.map(|s| Cow::Owned(s.to_vec())),
             );
 
             // Finish execution

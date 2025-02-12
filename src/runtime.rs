@@ -6,6 +6,7 @@ use crate::{
 };
 use deno_core::PollEventLoopOptions;
 use std::{path::Path, rc::Rc, time::Duration};
+use deno_core::error::CoreError;
 use tokio_util::sync::CancellationToken;
 
 /// Represents the set of options accepted by the runtime constructor
@@ -61,7 +62,7 @@ impl Runtime {
     ///     export const load = () => {
     ///         return 'Hello World!';
     ///     }
-    /// ");
+    /// ");F
     ///
     /// let module_handle = runtime.load_module(&module)?;
     /// let value: String = runtime.call_entrypoint(&module_handle, json_args!())?;
