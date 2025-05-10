@@ -136,7 +136,7 @@ fn op_set_raw(state: &mut OpState, rid: u32, is_raw: bool, cbreak: bool) -> Resu
 }
 
 #[op2(fast)]
-fn op_console_size(state: &mut OpState, #[buffer] result: &mut [u32]) -> Result<(), AnyError> {
+fn op_console_size(state: &mut OpState, #[buffer] result: &mut [u32]) -> Result<(), JSErrorBox> {
     fn check_console_size(
         state: &mut OpState,
         result: &mut [u32],

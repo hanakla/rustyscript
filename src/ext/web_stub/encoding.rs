@@ -1,5 +1,9 @@
+use std::any::Any;
+use std::borrow::Cow;
+use std::fmt::Debug;
 // Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
 use deno_core::{op2, v8, ByteString, ToJsBuffer};
+use deno_error::JsErrorClass;
 
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
@@ -18,6 +22,32 @@ pub enum WebError {
     DataInvalid,
     #[error(transparent)]
     DataError(#[from] v8::DataError),
+}
+
+impl JsErrorClass for WebError {
+    fn get_class(&self) -> Cow<'static, str> {
+        Cow::from("Error")
+    }
+
+    fn get_message(&self) -> Cow<'static, str> {
+        match self {
+            WebError::Base64Decode => Cow::from(format!("{}", self)),
+            WebError::InvalidEncodingLabel(label) => Cow::from(format!("{}", self)),
+            WebError::BufferTooLong => Cow::from(format!("{}", self)),
+            WebError::ValueTooLarge => Cow::from(format!("{}", self)),
+            WebError::BufferTooSmall => Cow::from(format!("{}", self)),
+            WebError::DataInvalid => Cow::from(format!("{}", self)),
+            WebError::DataError(e) => Cow::from(format!("{}", e)),
+        }
+    }
+
+    fn get_additional_properties(&self) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+        vec![]
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 #[op2]

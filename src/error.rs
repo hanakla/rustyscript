@@ -1,5 +1,12 @@
 //! Contains the error type for the runtime
 //! And some associated utilities
+
+use std::any::Any;
+use std::borrow::Cow;
+use deno_core::anyhow;
+use deno_core::anyhow::anyhow;
+use deno_core::error::{CoreError, ModuleLoaderError};
+use deno_error::{JsErrorBox, JsErrorClass};
 use crate::Module;
 use thiserror::Error;
 
@@ -62,6 +69,9 @@ pub enum Error {
     /// Triggers on runtime issues during execution of a module
     #[error("{0}")]
     Runtime(String),
+
+    #[error("{0}")]
+    CoreError(String),
 
     /// Runtime error we successfully downcast
     #[error("{0}")]
@@ -171,6 +181,56 @@ impl Error {
     }
 }
 
+impl From<CoreError> for Error {
+    fn from(e: CoreError) -> Self {
+        Error::CoreError(e.to_string())
+    }
+}
+
+impl JsErrorClass for Error {
+    fn get_class(&self) -> Cow<'static, str> {
+        match self {
+            Error::Runtime(_) => Cow::from("Error"),
+            Error::ModuleNotFound(_) => Cow::from("Error"),
+            Error::JsError(_) => Cow::from("Error"),
+            Error::JsonDecode(_) => Cow::from("Error"),
+            Error::CoreError(_) => Cow::from("Error"),
+            Error::Timeout(_) => Cow::from("TimeoutError"),
+            Error::HeapExhausted => Cow::from("Error"),
+            Error::WorkerHasStopped => Cow::from("Error"),
+            Error::MissingEntrypoint(_) => Cow::from("Error"),
+            Error::ValueNotFound(_) => Cow::from("Error"),
+            Error::ValueNotCallable(_) => Cow::from("Error"),
+            Error::V8Encoding(_) => Cow::from("Error"),
+        }
+    }
+
+    fn get_message(&self) -> Cow<'static, str> {
+        match self {
+            Error::Runtime(err) => Cow::from(format!("Error: {}", err)),
+            Error::ModuleNotFound(err) => Cow::from(format!("Error: {}", err)),
+            Error::JsError(err) =>  Cow::from(err.clone().message.unwrap_or("Error".to_string())),
+            Error::JsonDecode(err) => Cow::from(format!("Error: {}", err)),
+            Error::CoreError(err) => Cow::from(format!("Error: {}", err)),
+            Error::Timeout(err) => Cow::from(format!("TimeoutError: {}", err)),
+            Error::HeapExhausted => Cow::from("Error: Heap exhausted"),
+            Error::WorkerHasStopped => Cow::from("Error: Worker has stopped"),
+            Error::MissingEntrypoint(err) => Cow::from(format!("Error: {}", err)),
+            Error::ValueNotFound(err) => Cow::from(format!("Error: {}", err)),
+            Error::ValueNotCallable(err) => Cow::from(format!("Error: {}", err)),
+            Error::V8Encoding(err) => Cow::from(format!("Error: {}", err)),
+        }
+    }
+
+    fn get_additional_properties(&self) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+        vec![]
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 #[macro_use]
 mod error_macro {
     /// Maps one error type to another
@@ -199,6 +259,14 @@ map_error!(deno_core::serde_json::Error, |e| Error::JsonDecode(
     e.to_string()
 ));
 map_error!(deno_core::serde_v8::Error, |e| Error::JsonDecode(
+    e.to_string()
+));
+
+map_error!(JsErrorBox, |e| Error::CoreError(
+    e.to_string()
+));
+
+map_error!(ModuleLoaderError, |e| Error::CoreError(
     e.to_string()
 ));
 

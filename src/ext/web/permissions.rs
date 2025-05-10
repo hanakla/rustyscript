@@ -37,9 +37,8 @@ impl PermissionDenied {
 // Nonsense error for now
 impl From<PermissionDenied> for PermissionCheckError {
     fn from(e: PermissionDenied) -> Self {
-        PermissionCheckError::PermissionDenied(PermissionDeniedError {
+        PermissionCheckError::PermissionDenied(PermissionDeniedError::Fatal {
             access: e.access,
-            name: e.name,
         })
     }
 }
@@ -643,7 +642,7 @@ impl deno_fetch::FetchPermissions for PermissionsContainer {
         p: &'a Path,
         api_name: &str,
     ) -> Result<Cow<'a, Path>, PermissionCheckError> {
-        let p = self.0.check_read(p, Some(api_name))?;
+        let p = self.0.check_read(p, Some(api_name));
         Ok(p)
     }
 }

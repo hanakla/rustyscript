@@ -4,6 +4,7 @@ use deno_core::{
     v8::{BackingStore, SharedRef},
     CrossIsolateStore, Extension,
 };
+use crate::ext::os::OsOptions;
 
 pub mod rustyscript;
 
@@ -85,6 +86,9 @@ pub mod node;
 #[cfg(feature = "node_experimental")]
 pub mod runtime;
 
+#[cfg(feature = "os")]
+pub mod os;
+
 /// Options for configuring extensions
 pub struct ExtensionOptions {
     /// Options specific to the `deno_web`, `deno_fetch` and `deno_net` extensions
@@ -152,6 +156,13 @@ pub struct ExtensionOptions {
     #[cfg(feature = "node_experimental")]
     #[cfg_attr(docsrs, doc(cfg(feature = "node_experimental")))]
     pub node_resolver: std::sync::Arc<node::RustyResolver>,
+
+    /// Optional OS-specific options for the `os` extension
+    ///
+    /// Requires the `os` feature to be enabled
+    #[cfg(feature = "os")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "os")))]
+    pub os: os::OsOptions,
 }
 
 impl Default for ExtensionOptions {
@@ -183,6 +194,9 @@ impl Default for ExtensionOptions {
 
             #[cfg(feature = "node_experimental")]
             node_resolver: std::sync::Arc::new(node::RustyResolver::default()),
+            
+            #[cfg(feature = "os")]
+            os: OsOptions::default(),
         }
     }
 }
@@ -263,6 +277,9 @@ pub(crate) fn all_extensions(
             is_snapshot,
         ));
     }
+    
+    #[cfg(feature = "os")]
+    extensions.extend(os::extensions(options.os.clone(), is_snapshot));
 
     extensions.extend(user_extensions);
     extensions
